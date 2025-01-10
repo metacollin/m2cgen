@@ -150,8 +150,13 @@ class XGBoostTreeModelAssembler(BaseTreeBoostingAssembler):
     def _assemble_tree(self, tree):
         if "leaf" in tree:
             return ast.NumVal(tree["leaf"], dtype=np.float32)
-
-        threshold = ast.NumVal(tree["split_condition"], dtype=np.float32)
+        thresholds = []
+        threshold = None
+        if isinstance(tree.get("split_condition"), list): # Categorical split
+            for category in tree["split_condition"]:
+                thresholds.append(ast.NumVal(category, dtype=np.int32))
+        else:
+            threshold = ast.NumVal(tree.get("split_condition", 0.5), dtype=np.float32)
         split = tree["split"]
         if split in self._feature_name_to_idx:
             feature_idx = self._feature_name_to_idx[split]
@@ -161,23 +166,37 @@ class XGBoostTreeModelAssembler(BaseTreeBoostingAssembler):
             feature_idx = int(split)
         feature_ref = ast.FeatureRef(feature_idx)
 
-        # Since comparison with NaN (missing) value always returns false we
-        # should make sure that the node ID specified in the "missing" field
-        # always ends up in the "else" branch of the ast.IfExpr.
-        use_lt_comp = tree["missing"] == tree["no"]
-        if use_lt_comp:
-            comp_op = ast.CompOpType.LT
+        if not isinstance(tree.get("split_condition"), list):
+            # Since comparison with NaN (missing) value always returns false we
+            # should make sure that the node ID specified in the "missing" field
+            # always ends up in the "else" branch of the ast.IfExpr.
+            use_lt_comp = tree.get("missing", tree["no"]) == tree["no"]
+            if use_lt_comp:
+                comp_op = ast.CompOpType.LT
+                true_child_id = tree["yes"]
+                false_child_id = tree["no"]
+            else:
+                comp_op = ast.CompOpType.GTE
+                true_child_id = tree["no"]
+                false_child_id = tree["yes"]
+
+            return ast.IfExpr(
+                ast.CompExpr(feature_ref, threshold, comp_op),
+                self._assemble_child_tree(tree, true_child_id),
+                self._assemble_child_tree(tree, false_child_id))
+        else:
+            comps = []
             true_child_id = tree["yes"]
             false_child_id = tree["no"]
-        else:
-            comp_op = ast.CompOpType.GTE
-            true_child_id = tree["no"]
-            false_child_id = tree["yes"]
+            for cat in thresholds:
+              comps.append(ast.CompExpr(feature_ref, cat, ast.CompOpType.EQ))
 
-        return ast.IfExpr(
-            ast.CompExpr(feature_ref, threshold, comp_op),
-            self._assemble_child_tree(tree, true_child_id),
-            self._assemble_child_tree(tree, false_child_id))
+            last_expr = ast.IfExpr(comps[-1], self._assemble_child_tree(tree, true_child_id), self._assemble_child_tree(tree, false_child_id))
+            for comp in reversed(comps[:-1]):
+                expr = ast.IfExpr(comp, self._assemble_child_tree(tree, true_child_id), last_expr)
+                last_expr = expr
+
+            return last_expr
 
     def _assemble_child_tree(self, tree, child_id):
         for child in tree["children"]:

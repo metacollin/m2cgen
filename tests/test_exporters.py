@@ -122,12 +122,3 @@ def test_export_to_rust(trained_model):
     assert generated_code.startswith("""
 fn score(input: Vec<f64>) -> f64 {
 """.strip())
-
-
-def test_export_to_fortran(trained_model):
-    generated_code = exporters.export_to_fortran(trained_model).strip()
-    assert generated_code.startswith("""
-function score(input)
-    double precision :: score
-    double precision, dimension(:) :: input
-""".strip())

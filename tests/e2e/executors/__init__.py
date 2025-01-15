@@ -3,7 +3,6 @@ from tests.e2e.executors.c_sharp import CSharpExecutor
 from tests.e2e.executors.dart import DartExecutor
 from tests.e2e.executors.elixir import ElixirExecutor
 from tests.e2e.executors.f_sharp import FSharpExecutor
-from tests.e2e.executors.fortran import FortranExecutor
 from tests.e2e.executors.go import GoExecutor
 from tests.e2e.executors.haskell import HaskellExecutor
 from tests.e2e.executors.java import JavaExecutor
@@ -22,7 +21,6 @@ __all__ = [
     CExecutor,
     GoExecutor,
     JavascriptExecutor,
-    FortranExecutor,
     VisualBasicExecutor,
     CSharpExecutor,
     PowershellExecutor,

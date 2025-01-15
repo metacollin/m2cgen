@@ -23,24 +23,20 @@ class BaseBoostingAssembler(ModelAssembler):
         self._is_classification = False
 
         model_class_name = type(model).__name__
-        self._is_classification = model_class_name in self.classifier_names
-
-        if self._is_classification:
+        if model_class_name in self.classifier_names:
+            self._is_classification = True
             if model.n_classes_ > 2:
                 self._output_size = model.n_classes_
-        else:
-            if getattr(self, "n_multioutput_targets", 1) > 1:
-                self._output_size = self.n_multioutput_targets
 
     def assemble(self):
-        if self._output_size > 1:
-            return self._assemble_multi_class_output(self._all_estimator_params)
-        else:
-            if self._is_classification:
+        if self._is_classification:
+            if self._output_size == 1:
                 return self._assemble_bin_class_output(self._all_estimator_params)
             else:
-                result_ast = self._assemble_single_output(self._all_estimator_params, base_score=self._base_score)
-                return self._single_convert_output(result_ast)
+                return self._assemble_multi_class_output(self._all_estimator_params)
+        else:
+            result_ast = self._assemble_single_output(self._all_estimator_params, base_score=self._base_score)
+            return self._single_convert_output(result_ast)
 
     def _assemble_single_output(self, estimator_params, base_score=0.0, split_idx=0):
         estimators_ast = self._assemble_estimators(estimator_params, split_idx)
@@ -73,10 +69,7 @@ class BaseBoostingAssembler(ModelAssembler):
             for i, e in enumerate(splits)
         ]
 
-        if self._is_classification:
-            return self._multi_class_convert_output(exprs)
-        else:
-            return self._multi_output_regression_convert_output(exprs)
+        return self._multi_class_convert_output(exprs)
 
     def _assemble_bin_class_output(self, estimator_params):
         # Base score is calculated based on
@@ -100,9 +93,6 @@ class BaseBoostingAssembler(ModelAssembler):
 
     def _multi_class_convert_output(self, exprs):
         return ast.SoftmaxExpr(exprs)
-
-    def _multi_output_regression_convert_output(self, exprs):
-        return ast.VectorVal(exprs)
 
     def _bin_class_convert_output(self, expr, to_reuse=True):
         return ast.SigmoidExpr(expr, to_reuse=to_reuse)
@@ -138,10 +128,6 @@ class XGBoostTreeModelAssembler(BaseTreeBoostingAssembler):
         "XGBRFClassifier"
     }
 
-    multioutput_regression_names = {
-        "XGBRegressor"
-    }
-
     def __init__(self, model):
         self.multiclass_params_seq_len = model.get_params().get("num_parallel_tree", 1)
         feature_names = model.get_booster().feature_names
@@ -155,11 +141,6 @@ class XGBoostTreeModelAssembler(BaseTreeBoostingAssembler):
         # Limit the number of trees that should be used for
         # assembling (if applicable).
         best_ntree_limit = getattr(model, "best_ntree_limit", None)
-
-        # handle case of multi output regression
-        model_class_name = type(model).__name__
-        if model_class_name in self.multioutput_regression_names:
-            self.n_multioutput_targets = int(len(trees) / model.n_estimators)
 
         super().__init__(model,
                          trees,
